@@ -5,7 +5,7 @@ from flask import Flask, render_template, session, redirect, url_for
 from flask_bootstrap import Bootstrap
 from flask_moment import Moment
 from flask_wtf import FlaskForm
-from wtforms import StringField, SubmitField
+from wtforms import StringField, SubmitField, BooleanField
 from wtforms.validators import DataRequired
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
@@ -64,18 +64,19 @@ def send_simple_message(to, subject, newUser):
     print('subject: ' + str(app.config['FLASKY_MAIL_SUBJECT_PREFIX']) + ' ' + subject, flush=True)
     print('text: ' + "Novo usuário cadastrado: " + newUser, flush=True)
 
-    resposta = requests.post(app.config['API_URL'], 
-                             auth=("api", app.config['API_KEY']), data={"from": app.config['API_FROM'], 
-                                                                        "to": to, 
-                                                                        "subject": app.config['FLASKY_MAIL_SUBJECT_PREFIX'] + ' ' + subject, 
+    resposta = requests.post(app.config['API_URL'],
+                             auth=("api", app.config['API_KEY']), data={"from": app.config['API_FROM'],
+                                                                        "to": to,
+                                                                        "subject": app.config['FLASKY_MAIL_SUBJECT_PREFIX'] + ' ' + subject,
                                                                         "text": "Novo usuário cadastrado: " + newUser})
-        
+
     print('Enviando mensagem (Resposta)...' + str(resposta) + ' - ' + datetime.now().strftime("%m/%d/%Y, %H:%M:%S"), flush=True)
     return resposta
 
 
 class NameForm(FlaskForm):
-    name = StringField('What is your name?', validators=[DataRequired()])
+    name = StringField('Qual é o seu nome?', validators=[DataRequired()])
+    email = BooleanField('Deseja enviar e-mail para flaskaulasweb@zohomail.com?')
     submit = SubmitField('Submit')
 
 
@@ -97,10 +98,20 @@ def internal_server_error(e):
 @app.route('/', methods=['GET', 'POST'])
 def index():
     form = NameForm()
+    user_all = User.query.all()
+    print(user_all, flush=True)
+
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.name.data).first()
+
         if user is None:
-            user = User(username=form.name.data)
+            user_role = Role.query.filter_by(name='User').first()
+            if user_role is None:
+                user_role = Role(name='User')
+                db.session.add(user_role)
+                db.session.commit()
+
+            user = User(username=form.name.data, role=user_role)
             db.session.add(user)
             db.session.commit()
             session['known'] = False
@@ -110,17 +121,24 @@ def index():
             print('URL: ' + str(app.config['API_URL']), flush=True)
             print('api: ' + str(app.config['API_KEY']), flush=True)
             print('from: ' + str(app.config['API_FROM']), flush=True)
-            print('to: ' + str([app.config['FLASKY_ADMIN'], "flaskaulasweb@zohomail.com"]), flush=True)
+            print('to: ' + str([app.config['FLASKY_ADMIN'], "matheusdejesusf@gmail.com", "flaskaulasweb@zohomail.com"]), flush=True)
             print('subject: ' + str(app.config['FLASKY_MAIL_SUBJECT_PREFIX']), flush=True)
             print('text: ' + "Novo usuário cadastrado: " + form.name.data, flush=True)
 
-            if app.config['FLASKY_ADMIN']:                
+            if app.config['FLASKY_ADMIN']:
                 print('Enviando mensagem...', flush=True)
-                send_simple_message([app.config['FLASKY_ADMIN'], "flaskaulasweb@zohomail.com"], 'Novo usuário', form.name.data)
+                send_simple_message([app.config['FLASKY_ADMIN'], "matheusdejesusf@gmail.com", "flaskaulasweb@zohomail.com"], 'Novo usuário', form.name.data)
                 print('Mensagem enviada...', flush=True)
         else:
             session['known'] = True
+
         session['name'] = form.name.data
         return redirect(url_for('index'))
-    return render_template('index.html', form=form, name=session.get('name'),
-                           known=session.get('known', False))
+
+    return render_template(
+        'index.html',
+        form=form,
+        name=session.get('name'),
+        known=session.get('known', False),
+        user_all=user_all
+    )
